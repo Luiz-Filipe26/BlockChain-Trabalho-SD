@@ -8,7 +8,8 @@ def print_menu():
     print("1. Mine a new block")
     print("2. Add a new transaction")
     print("3. View the blockchain")
-    print("4. Check if the blockchain is valid")
+    print("4. Resolve conflicts (consensus)")
+    print("5. Register new nodes")
     print("0. Exit")
 
 
@@ -56,22 +57,43 @@ def view_blockchain():
         print("Failed to retrieve blockchain")
 
 
-def check_validity():
+def resolve_conflicts():
     response = requests.get(f"{BASE_URL}/nodes/resolve")
     if response.status_code == 200:
-        print(response.json()['message'])
+        result = response.json()
+        print(result['message'])
+        if 'new_chain' in result:
+            print("Replaced chain:")
+            for block in result['new_chain']:
+                print(f"Index: {block['index']}")
+                print(f"Transactions: {block['transactions']}")
+                print(f"Proof: {block['proof']}")
+                print(f"Previous Hash: {block['previous_hash']}")
+                print("----")
     else:
-        print("Failed to check blockchain validity")
+        print("Failed to resolve conflicts")
+
+
+def register_nodes():
+    print("Register nodes:")
+    nodes = input("Enter nodes (comma-separated, e.g., 127.0.0.1:5001,127.0.0.1:5002): ")
+    node_list = [node.strip() for node in nodes.split(",")]
+
+    response = requests.post(f"{BASE_URL}/nodes/register", json={'nodes': node_list})
+    if response.status_code == 201:
+        print("Nodes registered successfully:")
+        print(response.json()['total_nodes'])
+    else:
+        print("Failed to register nodes")
 
 
 def main():
     global BASE_URL  # Define BASE_URL como uma variável global
     parser = argparse.ArgumentParser(description="Blockchain Client")
-    parser.add_argument('-i', '--ip', type=str, default="127.0.0.1", help="Server IP address (default: 127.0.0.1)")
     parser.add_argument('-p', '--port', type=int, default=5000, help="Server port (default: 5000)")
     args = parser.parse_args()
 
-    BASE_URL = f"http://{args.ip}:{args.port}"
+    BASE_URL = f"http://127.0.0.1:{args.port}"
 
     while True:
         print_menu()
@@ -84,7 +106,9 @@ def main():
         elif choice == '3':
             view_blockchain()
         elif choice == '4':
-            check_validity()
+            resolve_conflicts()
+        elif choice == '5':
+            register_nodes()
         elif choice == '0':
             break
         else:
