@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import requests
-import json
 from init_servers import init_servers
 
 # Variáveis globais
@@ -131,7 +130,7 @@ class BlockchainApp:
         self.show_transaction_in_text()
 
     def show_transaction_in_text(self):
-        """Exibe todas as transações da blockchain em uma só lista na TextArea."""
+        """Exibe todas as transações da blockchain com sender diferente de 0 na TextArea."""
         try:
             response = requests.get(f'{self.blockchain_url}/chain')  # Supondo que o endpoint da blockchain seja /chain
             if response.status_code == 200:
@@ -140,10 +139,17 @@ class BlockchainApp:
                 for block in blockchain.get('chain', []):
                     all_transactions.extend(block.get('transactions', []))
 
-                # Formatar as transações para exibição
+                # Filtrar transações cujo sender seja diferente de 0
+                filtered_transactions = [
+                    tx for tx in all_transactions if tx.get('sender') != '0'
+                ]
+
+                # Formatar as transações filtradas para exibição
                 formatted_transactions = "\n".join(
                     [f"Sender: {tx['sender']} | Recipient: {tx['recipient']} | Amount: {tx['amount']}" for tx in
-                     all_transactions])
+                     filtered_transactions]
+                )
+
                 self.transactions_text.delete(1.0, tk.END)  # Limpa o TextArea
                 self.transactions_text.insert(tk.END, f"Transações atuais:\n{formatted_transactions}\n")
             else:
