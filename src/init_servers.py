@@ -12,7 +12,7 @@ def start_blockchain_net_info():
 
 
 def start_blockchain():
-    for port in range(5000, 5008):
+    for port in range(5000, 5003):
         print(f"Iniciando o blockchain.py na porta {port}...")
         blockchain_thread = threading.Thread(target=main_blockchain, args=(port,))
         blockchain_thread.start()
@@ -61,7 +61,7 @@ def init_servers():
     start_blockchain_net_info()
     start_blockchain()
     # Verifica se o blockchain_net_info já possui os nós necessários
-    health_check_nodes('http://localhost:5260', min_nodes=8, wait_for_first_try=2, wait_for_next_try=1, max_tries=20)
+    health_check_nodes('http://localhost:5260', min_nodes=3, wait_for_first_try=2, wait_for_next_try=1, max_tries=20)
 
 
 if __name__ == '__main__':

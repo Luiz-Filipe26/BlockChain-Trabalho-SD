@@ -318,17 +318,11 @@ def register_nodes():
 
 
 @app.route('/nodes/resolve', methods=['GET'])
-def consensus():
+def resolve():
+    """
+    Resolve conflitos apenas na blockchain atual.
+    """
     replaced = blockchain.resolve_conflicts()
-
-    # Sempre tenta resolver os conflitos nos nós vizinhos, independentemente de nossa cadeia ser substituída ou não
-    for node in blockchain.nodes:
-        try:
-            response = requests.get(f'{node}/nodes/resolve')
-            if response.status_code == 200:
-                print(f"Conflitos resolvidos no nó {node}")
-        except requests.exceptions.RequestException as e:
-            print(f"Erro ao tentar resolver conflitos no nó {node}: {e}")
 
     if replaced:
         response = {
@@ -344,6 +338,27 @@ def consensus():
     return jsonify(response), 200
 
 
+@app.route('/nodes/resolve_net', methods=['GET'])
+def resolve_net():
+    """
+    Resolve conflitos nas blockchains de todos os nós vizinhos,
+    sem afetar a blockchain atual.
+    """
+    for node in blockchain.nodes:
+        try:
+            response = requests.get(f'{node}/nodes/resolve')
+            if response.status_code == 200:
+                print(f"Conflitos resolvidos no nó {node}")
+        except requests.exceptions.RequestException as e:
+            print(f"Erro ao tentar resolver conflitos no nó {node}: {e}")
+
+    response = {
+        'message': 'Attempted to resolve conflicts on neighboring nodes'
+    }
+
+    return jsonify(response), 200
+
+
 @app.route('/nodes/new_blockchain', methods=['POST'])
 def new_blockchain():
     """
@@ -352,7 +367,7 @@ def new_blockchain():
     try:
         # Usando o get_nodes para obter a lista de nós, removendo o próprio
         blockchain.nodes = get_nodes(my_node_address)
-        #print(f"Nó atualizado com nova lista de nós: {blockchain.nodes}")
+        # print(f"Nó atualizado com nova lista de nós: {blockchain.nodes}")
     except requests.exceptions.RequestException as e:
         print(f"Erro ao tentar buscar nós: {e}")
         return "Erro ao buscar nós", 500

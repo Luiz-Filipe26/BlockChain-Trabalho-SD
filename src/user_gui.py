@@ -8,7 +8,9 @@ from init_servers import init_servers
 NODES_SERVER_URL = "http://localhost:5260"  # URL base do servidor
 TRANSACTIONS_ENDPOINT = "/transactions/new"  # Endpoint para criação de transações
 NODES_ENDPOINT = "/nodes"  # Endpoint para obter a lista de nós
-RESOLVE_CONFLICTS_ENDPOINT = "/nodes/resolve"  # Endpoint para resolver conflitos
+MINER_ENDPOINT = "/mine"  # Endpoint para iniciar a mineração (corrigido)
+RESOLVE_CONFLICTS_ENDPOINT = "/nodes/resolve"  # Endpoint para resolver conflitos na blockchain
+RESOLVE_NET_ENDPOINT = "/nodes/resolve_net"  # Endpoint para resolver conflitos na rede
 
 
 class BlockchainApp:
@@ -114,8 +116,7 @@ class BlockchainApp:
         try:
             response = requests.post(f'{self.blockchain_url}{TRANSACTIONS_ENDPOINT}', json=transaction_data)
             if response.status_code == 201:
-                self.transactions_text.insert(tk.END, f"Transação criada: {json.dumps(transaction_data)}\n")
-                self.resolve_conflicts()
+                self.start_mining()  # Inicia a mineração
             else:
                 messagebox.showerror("Erro", "Erro ao criar transação.")
         except requests.exceptions.RequestException as e:
@@ -126,8 +127,45 @@ class BlockchainApp:
         self.recipient_entry.delete(0, tk.END)
         self.amount_entry.delete(0, tk.END)
 
+        # Exibir todas as transações após criação
+        self.show_transaction_in_text()
+
+    def show_transaction_in_text(self):
+        """Exibe todas as transações da blockchain em uma só lista na TextArea."""
+        try:
+            response = requests.get(f'{self.blockchain_url}/chain')  # Supondo que o endpoint da blockchain seja /chain
+            if response.status_code == 200:
+                blockchain = response.json()
+                all_transactions = []
+                for block in blockchain.get('chain', []):
+                    all_transactions.extend(block.get('transactions', []))
+
+                # Formatar as transações para exibição
+                formatted_transactions = "\n".join(
+                    [f"Sender: {tx['sender']} | Recipient: {tx['recipient']} | Amount: {tx['amount']}" for tx in
+                     all_transactions])
+                self.transactions_text.delete(1.0, tk.END)  # Limpa o TextArea
+                self.transactions_text.insert(tk.END, f"Transações atuais:\n{formatted_transactions}\n")
+            else:
+                messagebox.showerror("Erro", "Erro ao obter a blockchain para exibir transações.")
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Erro", f"Erro ao acessar a blockchain: {e}")
+
+    def start_mining(self):
+        """Chama a API de mineração e, após a mineração, resolve os conflitos da blockchain e da rede."""
+        try:
+            # Chama o endpoint de mineração
+            response = requests.get(f'{self.blockchain_url}{MINER_ENDPOINT}')
+            if response.status_code == 200:
+                self.resolve_conflicts()  # Resolve conflitos na blockchain
+                self.resolve_net()  # Resolve conflitos na rede
+            else:
+                messagebox.showerror("Erro", "Erro ao iniciar mineração.")
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Erro", f"Erro ao iniciar mineração: {e}")
+
     def resolve_conflicts(self):
-        """Chama a API de resolução de conflitos para garantir que a rede esteja consistente."""
+        """Chama a API de resolução de conflitos na blockchain."""
         try:
             response = requests.get(f'{self.blockchain_url}{RESOLVE_CONFLICTS_ENDPOINT}')
             if response.status_code == 200:
@@ -138,7 +176,18 @@ class BlockchainApp:
                     self.transactions_text.insert(tk.END,
                                                   "A cadeia está autoritária. Nenhuma substituição foi feita.\n")
         except requests.exceptions.RequestException as e:
-            messagebox.showerror("Erro", f"Erro ao resolver conflitos: {e}")
+            messagebox.showerror("Erro", f"Erro ao resolver conflitos na blockchain: {e}")
+
+    def resolve_net(self):
+        """Chama a API de resolução de conflitos na rede."""
+        try:
+            response = requests.get(f'{self.blockchain_url}{RESOLVE_NET_ENDPOINT}')
+            if response.status_code == 200:
+                self.transactions_text.insert(tk.END, "Conflitos resolvidos na rede.\n")
+            else:
+                messagebox.showerror("Erro", "Erro ao resolver conflitos na rede.")
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Erro", f"Erro ao resolver conflitos na rede: {e}")
 
 
 if __name__ == "__main__":
