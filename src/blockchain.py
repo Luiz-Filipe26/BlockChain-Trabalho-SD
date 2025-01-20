@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import requests
 from flask import Flask, jsonify, request
+from argparse import ArgumentParser
 
 
 class Blockchain:
@@ -21,7 +22,7 @@ class Blockchain:
         """
         Add a new node to the list of nodes
 
-        :param address: Address of node. Eg. 'http://192.168.0.5:5000'
+        :param address: Address of node. E.g. 'http://192.168.0.5:5000'
         """
 
         parsed_url = urlparse(address)
@@ -33,66 +34,106 @@ class Blockchain:
         else:
             raise ValueError('Invalid URL')
 
-
-    def valid_chain(self, chain):
+    def last_valid_block_index(self, chain):
         """
-        Determine if a given blockchain is valid
+        Retorna o índice do último bloco válido na cadeia.
 
         :param chain: A blockchain
-        :return: True if valid, False if not
+        :return: O índice do último bloco válido
         """
-
         last_block = chain[0]
         current_index = 1
 
         while current_index < len(chain):
             block = chain[current_index]
-            print(f'{last_block}')
-            print(f'{block}')
-            print("\n-----------\n")
-            # Check that the hash of the block is correct
+            # Verifica se o bloco é válido
             last_block_hash = self.hash(last_block)
-            if block['previous_hash'] != last_block_hash:
-                return False
-
-            # Check that the Proof of Work is correct
-            if not self.valid_proof(last_block['proof'], block['proof'], last_block_hash):
-                return False
+            if block['previous_hash'] != last_block_hash or not self.valid_proof(last_block['proof'], block['proof'],
+                                                                                 last_block_hash):
+                return current_index - 1  # Retorna o índice do último bloco válido
 
             last_block = block
             current_index += 1
 
-        return True
+        return len(chain) - 1  # Retorna o índice do último bloco se toda a cadeia for válida
+
+    def valid_chain(self, chain):
+        """
+        Verifica se a blockchain é válida.
+
+        :param chain: A blockchain
+        :return: True se a cadeia for válida, False caso contrário
+        """
+        last_valid_index = self.last_valid_block_index(chain)
+        return last_valid_index == len(chain) - 1
 
     def resolve_conflicts(self):
         """
-        This is our consensus algorithm, it resolves conflicts
-        by replacing our chain with the longest one in the network.
+        Algoritmo de consenso que resolve conflitos substituindo nossa blockchain
+        pela blockchain válida mais longa que contenha o bloco de consenso (hash mais votada e mais recente).
+        Caso não haja blockchains válidas externas, utiliza a maior cadeia válida localmente.
 
-        :return: True if our chain was replaced, False if not
+        :return: True se nossa cadeia foi substituída, False caso contrário.
         """
-
         neighbours = self.nodes
-        new_chain = None
+        valid_hashes = {}
+        all_chains = [self.chain]  # Adiciona a própria cadeia no início
 
-        # We're only looking for chains longer than ours
-        max_length = len(self.chain)
-
-        # Grab and verify the chains from all the nodes in our network
+        # Coleta todas as blockchains dos nós vizinhos
         for node in neighbours:
-            response = requests.get(f'http://{node}/chain')
+            try:
+                response = requests.get(f'{node}/chain')
+                if response.status_code == 200:
+                    chain = response.json()['chain']
+                    all_chains.append(chain)
+            except Exception as e:
+                print(f"Erro ao conectar com {node}: {e}")
 
-            if response.status_code == 200:
-                length = response.json()['length']
-                chain = response.json()['chain']
+        # Filtra apenas blockchains válidas
+        valid_chains = [chain for chain in all_chains if self.valid_chain(chain)]
 
-                # Check if the length is longer and the chain is valid
-                if length > max_length and self.valid_chain(chain):
-                    max_length = length
-                    new_chain = chain
+        if not valid_chains:
+            # Nenhuma blockchain válida, escolhe a maior entre as válidas localmente
+            longest_chain = max(all_chains, key=lambda current_chain: self.last_valid_block_index(current_chain))
 
-        # Replace our chain if we discovered a new, valid chain longer than ours
-        if new_chain:
+            # Obtém o índice do último bloco válido
+            last_valid_index = self.last_valid_block_index(longest_chain)
+
+            # Corta a cadeia para incluir apenas os blocos válidos
+            self.chain = longest_chain[:last_valid_index + 1]
+
+            return True
+
+        # Processar apenas blockchains válidas
+        for chain in valid_chains:
+            chain_hashes = [self.hash(block) for block in chain]
+
+            # Armazena relação de hashes para votos e posição
+            for index, hash_value in enumerate(chain_hashes):
+                if hash_value not in valid_hashes:
+                    valid_hashes[hash_value] = {"votes": 1, "position": index}
+                else:
+                    valid_hashes[hash_value]["votes"] += 1
+
+        # Encontrar a hash com mais votos e maior posição
+        most_valid_hash = max(
+            valid_hashes.items(),
+            key=lambda item: (item[1]["votes"], item[1]["position"])
+        )[0]
+
+        print(f"Hash mais validada: {most_valid_hash} com {valid_hashes[most_valid_hash]['votes']} votos.")
+
+        # Encontrar todas as blockchains que contêm o bloco de consenso
+        consensus_chains = [
+            chain for chain in valid_chains
+            if most_valid_hash in [self.hash(block) for block in chain]
+        ]
+
+        # Escolher a blockchain mais longa
+        new_chain = max(consensus_chains, key=lambda current_chain: (len(current_chain), self.hash(current_chain[-1])))
+
+        # Verificar se a cadeia deve ser substituída
+        if len(self.chain) != len(new_chain) or self.hash(self.chain[-1]) != self.hash(new_chain[-1]):
             self.chain = new_chain
             return True
 
@@ -160,7 +201,7 @@ class Blockchain:
 
          - Find a number p' such that hash(pp') contains leading 4 zeroes
          - Where p is the previous proof, and p' is the new proof
-         
+
         :param last_block: <dict> last Block
         :return: <int>
         """
@@ -200,6 +241,9 @@ node_identifier = str(uuid4()).replace('-', '')
 # Instantiate the Blockchain
 blockchain = Blockchain()
 
+# The adress where the program receives requests
+my_node_address = None
+
 
 @app.route('/mine', methods=['GET'])
 def mine():
@@ -226,6 +270,7 @@ def mine():
         'proof': block['proof'],
         'previous_hash': block['previous_hash'],
     }
+
     return jsonify(response), 200
 
 
@@ -276,6 +321,15 @@ def register_nodes():
 def consensus():
     replaced = blockchain.resolve_conflicts()
 
+    # Sempre tenta resolver os conflitos nos nós vizinhos, independentemente de nossa cadeia ser substituída ou não
+    for node in blockchain.nodes:
+        try:
+            response = requests.get(f'{node}/nodes/resolve')
+            if response.status_code == 200:
+                print(f"Conflitos resolvidos no nó {node}")
+        except requests.exceptions.RequestException as e:
+            print(f"Erro ao tentar resolver conflitos no nó {node}: {e}")
+
     if replaced:
         response = {
             'message': 'Our chain was replaced',
@@ -290,12 +344,56 @@ def consensus():
     return jsonify(response), 200
 
 
-if __name__ == '__main__':
-    from argparse import ArgumentParser
+@app.route('/nodes/new_blockchain', methods=['POST'])
+def new_blockchain():
+    """
+    Endpoint chamado quando um novo blockchain é anunciado. Busca os nós registrados.
+    """
+    try:
+        # Usando o get_nodes para obter a lista de nós, removendo o próprio
+        blockchain.nodes = get_nodes(my_node_address)
+        #print(f"Nó atualizado com nova lista de nós: {blockchain.nodes}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro ao tentar buscar nós: {e}")
+        return "Erro ao buscar nós", 500
 
+    return jsonify({
+        'message': 'Blockchain e lista de nós atualizados com sucesso',
+        'total_nodes': list(blockchain.nodes),
+    }), 200
+
+
+def get_nodes(node_address):
+    response = requests.get('http://localhost:5260/nodes')
+    if response.status_code == 200:
+        nodes = response.json().get('nodes', [])
+        # Remove o próprio nó da lista de nós
+        nodes = [node for node in nodes if node != node_address]
+        blockchain.nodes = set(nodes)
+        # print(f"Lista de nós registrados obtida: {nodes}")
+        return nodes
+    else:
+        print(f"Erro ao obter nós registrados: {response.status_code}")
+    return []
+
+
+def main(port):
+    global my_node_address
+    # Obtém o endereço do nó com base na porta fornecida
+    my_node_address = f'http://localhost:{port}'
+
+    # Registra automaticamente este nó no servidor de registro
+    requests.post('http://localhost:5260/nodes/register', json={'address': my_node_address})
+
+    # Obtém a lista de nós registrados
+    blockchain.nodes = get_nodes(my_node_address)
+
+    # Inicia o aplicativo Flask
+    app.run(host='0.0.0.0', port=port)
+
+
+if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
     args = parser.parse_args()
-    port = args.port
-
-    app.run(host='0.0.0.0', port=port)
+    main(args.port)
