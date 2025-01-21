@@ -92,7 +92,7 @@ class BlockchainApp:
             messagebox.showerror("Erro", "Por favor, selecione um nó para conectar.")
 
     def create_transaction(self):
-        """Cria uma nova transação e a envia para o servidor."""
+        """Cria uma nova transação seguindo a ordem correta dos passos."""
         sender = self.sender_entry.get()
         recipient = self.recipient_entry.get()
         amount = self.amount_entry.get()
@@ -108,18 +108,24 @@ class BlockchainApp:
             'amount': amount
         }
 
-        # Imprimir o JSON gerado no console
-        print("Transação gerada:", transaction_data)
-        print("Sendo registrada em: ", f'{self.blockchain_url}{TRANSACTIONS_ENDPOINT}')
-
         try:
+            # Resolver conflitos da blockchain conectada
+            self.resolve_conflicts()
+
+            # Resolver conflitos da rede
+            self.resolve_net()
+
+            # Criar a transação
             response = requests.post(f'{self.blockchain_url}{TRANSACTIONS_ENDPOINT}', json=transaction_data)
             if response.status_code == 201:
-                self.start_mining()  # Inicia a mineração
+                # Após criar a transação, iniciar a mineração
+                self.start_mining()
             else:
                 messagebox.showerror("Erro", "Erro ao criar transação.")
+                return
         except requests.exceptions.RequestException as e:
-            messagebox.showerror("Erro", f"Erro ao enviar transação: {e}")
+            messagebox.showerror("Erro", f"Erro ao processar a transação: {e}")
+            return
 
         # Limpar campos após envio
         self.sender_entry.delete(0, tk.END)
@@ -128,6 +134,19 @@ class BlockchainApp:
 
         # Exibir todas as transações após criação
         self.show_transaction_in_text()
+
+    def start_mining(self):
+        """Chama a API de mineração e resolve conflitos na rede após a mineração."""
+        try:
+            # Chama o endpoint de mineração
+            response = requests.get(f'{self.blockchain_url}{MINER_ENDPOINT}')
+            if response.status_code == 200:
+                # Após minerar, resolver conflitos na rede
+                self.resolve_net()
+            else:
+                messagebox.showerror("Erro", "Erro ao iniciar mineração.")
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Erro", f"Erro ao iniciar mineração: {e}")
 
     def show_transaction_in_text(self):
         """Exibe todas as transações da blockchain com sender diferente de 0 na TextArea."""
@@ -156,19 +175,6 @@ class BlockchainApp:
                 messagebox.showerror("Erro", "Erro ao obter a blockchain para exibir transações.")
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Erro", f"Erro ao acessar a blockchain: {e}")
-
-    def start_mining(self):
-        """Chama a API de mineração e, após a mineração, resolve os conflitos da blockchain e da rede."""
-        try:
-            # Chama o endpoint de mineração
-            response = requests.get(f'{self.blockchain_url}{MINER_ENDPOINT}')
-            if response.status_code == 200:
-                self.resolve_conflicts()  # Resolve conflitos na blockchain
-                self.resolve_net()  # Resolve conflitos na rede
-            else:
-                messagebox.showerror("Erro", "Erro ao iniciar mineração.")
-        except requests.exceptions.RequestException as e:
-            messagebox.showerror("Erro", f"Erro ao iniciar mineração: {e}")
 
     def resolve_conflicts(self):
         """Chama a API de resolução de conflitos na blockchain."""

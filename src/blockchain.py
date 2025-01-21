@@ -403,6 +403,8 @@ def main(port):
     # Obtém a lista de nós registrados
     blockchain.nodes = get_nodes(my_node_address)
 
+    blockchain.resolve_conflicts()
+
     # Inicia o aplicativo Flask
     app.run(host='0.0.0.0', port=port)
 
